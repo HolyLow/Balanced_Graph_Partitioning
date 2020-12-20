@@ -117,9 +117,9 @@ class GraphPartitioning(object):
             rightChild.right = None
             subTree.left = leftChild
             subTree.right = rightChild
-            if (self.getWeightsNodes(leftChild.data.node) > threshold): #comments are the same of createSubTree function (before seen)
+            if (self.getWeightsNodes(leftChild.data.nodes) > threshold): #comments are the same of createSubTree function (before seen)
                 self.bilancedPartition(leftChild, threshold, G)
-            if (self.getWeightsNodes(rightChild.data.node) > threshold):
+            if (self.getWeightsNodes(rightChild.data.nodes) > threshold):
                 self.bilancedPartition(rightChild, threshold, G)
 
     def getWeightsNodes(self,nodes):                            # calculate of the total weight of nodes
@@ -129,7 +129,7 @@ class GraphPartitioning(object):
         return weight
 
     def removeBigNodes(self,root,threshold,listTrees):
-        if(self.getWeightsNodes(root.data.node)<threshold):
+        if(self.getWeightsNodes(root.data.nodes)<threshold):
             listTrees.append(root)
             return
         else:
@@ -139,15 +139,15 @@ class GraphPartitioning(object):
     def pruneTree(self,root):                               # remove nodes that are too big by returning the root the the nwe sub trees
         listTrees = []
         num = 0
-        for node in self.G.node:
-            num += self.G.node[node]['weight']
+        for node in self.G.nodes:
+            num += self.G.nodes[node]['weight']
         self.removeBigNodes(root,(1+self.epsilon)*(num/self.k),listTrees)
         return listTrees
 
     def getGVector(self):                                   # generate the size for the G vector (paragraph 3.1 of the paper)
         num = 0
-        for node in self.G.node:
-            num += self.G.node[node]['weight']
+        for node in self.G.nodes:
+            num += self.G.nodes[node]['weight']
         vector_gValue = []
         val = math.pow((1 + self.epsilon/2),
                        math.floor(math.log(self.epsilon*num/(3*self.k),
@@ -159,8 +159,8 @@ class GraphPartitioning(object):
 
     def calculateCost(self,graphData,left,right):            #calculate cost of divide two sets
         sum = 0
-        leftNodes = left.data.node
-        rightNodes = right.data.node
+        leftNodes = left.data.nodes
+        rightNodes = right.data.nodes
         smallPart = None
         bigPartPart = None
         if(len(leftNodes) > len(rightNodes)):
@@ -169,9 +169,9 @@ class GraphPartitioning(object):
         else:
             smallPart = leftNodes
             bigPartPart = rightNodes
-        for edge in graphData.edge:
+        for edge in graphData.edges:
             if(edge in smallPart):
-                edges = graphData.edge[edge]
+                edges = graphData.edges[edge]
                 for singEdge in edges:
                     if(singEdge in bigPartPart):
                         sum += edges[singEdge]['weight']
@@ -189,9 +189,9 @@ class GraphPartitioning(object):
         else:
             smallPart = leftNodes
             bigPartPart = rightNodes
-        for edge in graphData.edge:
+        for edge in graphData.edges:
             if(edge in smallPart):
-                edges = graphData.edge[edge]
+                edges = graphData.edges[edge]
                 for singEdge in edges:
                     if(singEdge in bigPartPart):
                         sum += edges[singEdge]['weight'] #= 1
@@ -202,7 +202,7 @@ class GraphPartitioning(object):
         if(i[0]==num):
             temp = []
             for el in listNodes:
-                temp.append(el.data.node)
+                temp.append(el.data.nodes)
             return temp
         for k in range(len(listNodes)):
             if (listNodes[k].left != None):
@@ -379,8 +379,8 @@ class GraphPartitioning(object):
 
     def getWeightsOfNodes(self):                                                  # calculate sum of all the weights of the nodes
         num = 0
-        for node in self.G.node:
-            num += self.G.node[node]['weight']
+        for node in self.G.nodes:
+            num += self.G.nodes[node]['weight']
         self.num = num
         return num
 
@@ -431,9 +431,9 @@ def main(sourceFile,destinationFile,k,epsilon):
         #G = nx.connected_watts_strogatz_graph(15,2,0.1)
         #G = nx.dorogovtsev_goltsev_mendes_graph(3)
         for (u, v) in G.edges():                            # initialize the weight of the edges of the graph
-            G.edge[u][v]['weight'] = 1 #random.randint(0, 10)
+            G.edges[u][v]['weight'] = 1 #random.randint(0, 10)
     for n in G.nodes():                                     # initialize the weight of the nodes of the graph
-        G.node[n]['weight'] = 1 #random.random() * 100
+        G.nodes[n]['weight'] = 1 #random.random() * 100
     n = G.number_of_nodes()
     if (nx.is_connected(G) and k<=n):
         print("Avvio trasformazione di grafo in albero")
