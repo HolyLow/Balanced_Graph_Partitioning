@@ -6,6 +6,7 @@ import itertools
 import numpy as np
 import sys
 import bisect
+import os.path
 
 if sys.version_info[0] > 2:
     from src.BinPackerDynamic import Binpacker,Item
@@ -410,7 +411,7 @@ class GraphPartitioning(object):
 
         return bestP
 
-    def savePartitionToFile(self,bestP,file):
+    def savePartitionToFile(self,bestP,filename):
         stringToSave = ""
         for el in bestP:
             stringToSave += "["
@@ -418,36 +419,101 @@ class GraphPartitioning(object):
                 stringToSave += str(key)+","
             stringToSave = stringToSave[:-1]
             stringToSave += "]"
-        file = open("bestPartition.txt", "w")
+        file = open(filename, "w")
         file.write(stringToSave)
         file.close()
 
-def main(sourceFile,destinationFile,k,epsilon):
+# def main(sourceFile,destinationFile,k,epsilon):
 
-    if(sourceFile!=""):
-        G = nx.read_weighted_edgelist(sourceFile, delimiter=' ', nodetype=str)  #read the graph from file(adjacency list) graph.csv is an example of format
-    else:
-        G = nx.gaussian_random_partition_graph(100,2,0.1,0.6,0.6)    #select and generate the intial graph
-        #G = nx.connected_watts_strogatz_graph(15,2,0.1)
-        #G = nx.dorogovtsev_goltsev_mendes_graph(3)
-        for (u, v) in G.edges():                            # initialize the weight of the edges of the graph
-            G.edges[u][v]['weight'] = 1 #random.randint(0, 10)
-    for n in G.nodes():                                     # initialize the weight of the nodes of the graph
-        G.nodes[n]['weight'] = 1 #random.random() * 100
+#     if(sourceFile!=""):
+#         G = nx.read_weighted_edgelist(sourceFile, delimiter=' ', nodetype=str)  #read the graph from file(adjacency list) graph.csv is an example of format
+#     else:
+#         G = nx.gaussian_random_partition_graph(100,2,0.1,0.6,0.6)    #select and generate the intial graph
+#         #G = nx.connected_watts_strogatz_graph(15,2,0.1)
+#         #G = nx.dorogovtsev_goltsev_mendes_graph(3)
+#         for (u, v) in G.edges():                            # initialize the weight of the edges of the graph
+#             G.edges[u][v]['weight'] = 1 #random.randint(0, 10)
+#     for n in G.nodes():                                     # initialize the weight of the nodes of the graph
+#         G.nodes[n]['weight'] = 1 #random.random() * 100
+#     n = G.number_of_nodes()
+#     if (nx.is_connected(G) and k<=n):
+#         print("Avvio trasformazione di grafo in albero")
+#         partitor = GraphPartitioning(epsilon, n, k, G)      # create the object and pass it the intial graph
+#         bestP = partitor.run()                              # run the algorithm and return the best paritition
+#         print("The best parition is:")
+#         partitor.printPartition(bestP)                      # print textually the best partition
+#         print("The cost of the parition is:")
+#         print(partitor.getCostPartition(bestP))             # calculate and print the cost of the best partition
+#         partitor.printGraphWithPartitions(bestP)            # render graphically the best partitions
+#         partitor.savePartitionToFile(bestP,destinationFile) # save the best partition to file
+
+# if(len(sys.argv)==1):
+#     main("","bestPartition.txt",3,0.9)     #if sourceFile=="" a networkx graph is generated otherwise the file is read from graph
+#     # main("graph.csv","bestPartition.txt",3,0.9)
+# else:
+#     main(sys.argv[1],sys.argv[2],int(sys.argv[3]),float(sys.argv[4]))       # read input from command line parameters
+    
+def convert_adjacency_matrix_into_nxgraph(matrix):
+    G = nx.Graph()
+    for i in range(matrix.shape[0]):
+        G.add_node(i)
+        G.nodes[i]['weight'] = 1
+    for i in range(matrix.shape[0]):
+        for j in range(i+1, matrix.shape[1]):
+            edge_weight = matrix[i][j] + matrix[j][i]
+            G.add_edge(i, j, weight=edge_weight)
+            # G.edges[i][j]['weight'] = edge_weight
+    return G
+
+def convert_partition_into_distribution(size, partition):
+    distribution = np.zeros(size, dtype="int")
+    for i in range(len(partition)):
+        # for j in range(len(partition[i])):
+        #     distribution[partition[i][j]] = i
+        for j in partition[i]:
+            distribution[j] = i
+    return distribution
+
+def analyse_partition_cut(con_mat, distribution, nhost):
+        partition_cut_mat = np.zeros((nhost, nhost), dtype=int)
+        for row in range(0, con_mat.shape[0]):
+            for col in range(0, con_mat.shape[1]):
+                partition_cut_mat[distribution[row]][distribution[col]] += con_mat[row][col]
+        print("partition_cut_mat: " + str(partition_cut_mat))
+        cut_cnt = 0
+        for i in range(0, nhost):
+            for j in range(0, nhost):
+                if i != j:
+                    cut_cnt += partition_cut_mat[i][j]
+        print("partition cut_count: " + str(cut_cnt))
+
+if __name__ == "__main__":
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser(description="Balanced cut on graph")
+    parser.add_argument("inFile", help="Input graph connection file, in numpy format")
+    # parser.add_argument("outFile", help="Output partition result file, in numpy format")
+    parser.add_argument("k", type=int, help="Partition number")
+    parser.add_argument("epsilon", type=float, help="Partition epsilon")
+    args = parser.parse_args()
+    
+    matrix = np.loadtxt(args.inFile, delimiter=",", dtype="int")
+    fingerprint = "partition" + str(matrix.shape[0]) + "-" + str(args.k) + "-" + str(args.epsilon)
+    save_dir = os.path.dirname(args.inFile)
+    save_txt = save_dir + "/" + fingerprint + ".txt"
+    save_csv = save_dir + "/" + fingerprint + ".csv"
+    G = convert_adjacency_matrix_into_nxgraph(matrix)
     n = G.number_of_nodes()
-    if (nx.is_connected(G) and k<=n):
-        print("Avvio trasformazione di grafo in albero")
-        partitor = GraphPartitioning(epsilon, n, k, G)      # create the object and pass it the intial graph
+    if (nx.is_connected(G) and args.k<=n):
+        print("Start partitioning...")
+        partitor = GraphPartitioning(args.epsilon, n, args.k, G)      # create the object and pass it the intial graph
         bestP = partitor.run()                              # run the algorithm and return the best paritition
         print("The best parition is:")
         partitor.printPartition(bestP)                      # print textually the best partition
-        print("The cost of the parition is:")
-        print(partitor.getCostPartition(bestP))             # calculate and print the cost of the best partition
-        partitor.printGraphWithPartitions(bestP)            # render graphically the best partitions
-        partitor.savePartitionToFile(bestP,destinationFile) # save the best partition to file
-
-if(len(sys.argv)==1):
-    main("","bestPartition.txt",3,0.9)     #if sourceFile=="" a networkx graph is generated otherwise the file is read from graph
-    # main("graph.csv","bestPartition.txt",3,0.9)
-else:
-    main(sys.argv[1],sys.argv[2],int(sys.argv[3]),float(sys.argv[4]))       # read input from command line parameters
+        distribution = convert_partition_into_distribution(matrix.shape[0], bestP)
+        analyse_partition_cut(matrix, distribution, args.k)
+        np.savetxt(save_csv, distribution, delimiter=",", fmt="%d")
+        partitor.savePartitionToFile(bestP, save_txt) # save the best partition to file
+        # print("The cost of the parition is:")
+        # print(partitor.getCostPartition(bestP))             # calculate and print the cost of the best partition
+        # partitor.printGraphWithPartitions(bestP)            # render graphically the best partitions
