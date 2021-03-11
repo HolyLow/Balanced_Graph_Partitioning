@@ -91,7 +91,7 @@ class MetisCut(object):
 
         self.run_metis_partition(graph_file, npartition)
 
-        distribution = self.load_metis_partion_result(graph_file, npartition)
+        distribution = self.load_metis_partition_result(graph_file, npartition)
         return distribution
 
     def export_connection_matrix_to_metis_graph(self, con_mat, graph_file):
@@ -118,7 +118,7 @@ class MetisCut(object):
         assert status == 0, "command status is not success"
         print(output)
 
-    def load_metis_partion_result(self, graph_file, npartition):
+    def load_metis_partition_result(self, graph_file, npartition):
         distribution_file = graph_file + ".part." + str(npartition)
         distribution = np.loadtxt(distribution_file, delimiter=",", dtype="int")
         max_id = np.max(distribution)
