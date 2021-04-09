@@ -5,10 +5,12 @@ import sys
 
 class MetisGraphHelper(object):
 
-    def __init__(self, metisUndirectedGraphFile, partitionNum, hyperMetisGraphFiles, metisDistFiles):
+    def __init__(self, metisUndirectedGraphFile, partitionNum, machineNum, machineScale, hyperMetisGraphFiles, metisDistFiles):
         self.metisUndirectedGraphFile = metisUndirectedGraphFile
         self.metisUndirectedGraph = self.loadMetisFileToGraphListDict(self.metisUndirectedGraphFile)
         self.partitionNum = partitionNum
+        self.machineNum = machineNum
+        self.machineScale = machineScale
         self.hyperMetisGraphFiles = hyperMetisGraphFiles
         self.hyperMetisGraphs = []
         for hyperMetisGraphFile in self.hyperMetisGraphFiles:
@@ -17,6 +19,9 @@ class MetisGraphHelper(object):
         self.metisDists = []
         for metisDistFile in self.metisDistFiles:
             self.metisDists.append(self.loadDistributionFileToDistributionArray(metisDistFile))
+        if self.partitionNum % self.machineNum != 0:
+            print("partitionNum can not equally be distributed to machineNum")
+            sys.exit(1)
 
     def analyze(self):
         nodeNum = len(self.metisUndirectedGraph)
@@ -31,11 +36,19 @@ class MetisGraphHelper(object):
 
     def analyzeDistribution(self, distributionName, distributionArray):
         print("analyzing {} distribution...".format(distributionName))
-        cut = self.analyzeGraphDistributionCut(self.metisUndirectedGraph, distributionArray, True)
-        print("{} {} undirected graph cut = {}".format(distributionName, self.metisUndirectedGraphFile, cut))
+        # cut = self.analyzeGraphDistributionCut(self.metisUndirectedGraph, distributionArray, True)
+        roundRobinMachineDist = self.generateRoundRobinDistributionArray(self.partitionNum, self.machineNum)
+        continuousSegmentMachineDist = self.generateContinuousSegmentDistributionArray(self.partitionNum, self.machineNum)
+        cutMatrix = self.analyzeGraphPartitionDistributionCut(self.metisUndirectedGraph, distributionArray, True)
+        roundRobinMachineCut = self.analyzeMultiMachineDistributionCut(cutMatrix, roundRobinMachineDist, self.machineScale)
+        continuousMachineCut = self.analyzeMultiMachineDistributionCut(cutMatrix, continuousSegmentMachineDist, self.machineScale)
+        print("{} {} undirected graph roundRobinMachineCut = {}, continuousMachineCut = {}".format(distributionName, self.metisUndirectedGraphFile, roundRobinMachineCut, continuousMachineCut))
         for i in range(len(self.hyperMetisGraphs)):
-            cut = self.analyzeHyperGraphDistributionCut(self.hyperMetisGraphs[i], distributionArray)
-            print("{} {} hyper graph cut = {}".format(distributionName, self.hyperMetisGraphFiles[i], cut))
+            # cut = self.analyzeHyperGraphDistributionCut(self.hyperMetisGraphs[i], distributionArray)
+            cutMatrix = self.analyzeHyperGraphPartitionDistributionCut(self.hyperMetisGraphs[i], distributionArray)
+            roundRobinMachineCut = self.analyzeMultiMachineDistributionCut(cutMatrix, roundRobinMachineDist, self.machineScale)
+            continuousMachineCut = self.analyzeMultiMachineDistributionCut(cutMatrix, continuousSegmentMachineDist, self.machineScale)
+            print("{} {} hyper graph roundRobinMachineCut = {}, continuousMachineCut = {}".format(distributionName, self.hyperMetisGraphFiles[i], roundRobinMachineCut, continuousMachineCut))
 
     def loadMetisFileToGraphListDict(self, filename):
         with open(filename, 'r') as f:
@@ -118,6 +131,21 @@ class MetisGraphHelper(object):
             cut /= 2
         return cut
 
+    def analyzeGraphPartitionDistributionCut(self, graphListDict, distributionArray, isUndirected):
+        partitionNum = np.max(distributionArray) + 1
+        cutMatrix = np.zeros((partitionNum, partitionNum), dtype=int)
+        for srcNodeId in range(len(graphListDict)):
+            nodeEdgeDict = graphListDict[srcNodeId]
+            for desNodeId, cnt in nodeEdgeDict.items():
+                cutMatrix[distributionArray[srcNodeId]][distributionArray[desNodeId]] += cnt
+        for i in range(partitionNum):
+            for j in range(partitionNum):
+                if i == j:
+                    cutMatrix[i][j] = 0
+                elif isUndirected:
+                    cutMatrix[i][j] /= 2
+        return cutMatrix
+
     def analyzeGraphDistributionNodeCut(self, graphListDict, distributionArray):
         partitionNum = np.max(distributionArray) + 1
         nodeNum = len(graphListDict)
@@ -152,6 +180,42 @@ class MetisGraphHelper(object):
                     edgeCut += 1
             hyperCut += (edgeCut-1) * weight
         return hyperCut
+
+    def analyzeHyperGraphPartitionDistributionCut(self, hyperGraphListList, distributionArray):
+        if hyperGraphListList[0][2] != 1:
+            print("error: unsupported hypergraph type {}".format(hyperGraphListList[0][2]))
+            sys.exit(1)
+        partitionNum = np.max(distributionArray) + 1
+        cutMatrix = np.zeros((partitionNum, partitionNum), dtype=int)
+        # hyperCut = 0
+        for i in range(1, len(hyperGraphListList)):
+            hyperEdge = hyperGraphListList[i]
+            weight = hyperEdge[0]
+            distributionCnt = np.zeros(partitionNum, dtype=int)
+            for j in range(1, len(hyperEdge)):
+                distributionCnt[distributionArray[hyperEdge[j]]] += 1
+            # edgeCut = 0
+            srcPartition = distributionArray[hyperEdge[1]]
+            for j in range(partitionNum):
+                if distributionCnt[j] != 0:
+                    # edgeCut += 1
+                    cutMatrix[srcPartition][j] += weight
+            # hyperCut += (edgeCut-1) * weight
+        for i in range(partitionNum):
+            for j in range(partitionNum):
+                if i == j:
+                    cutMatrix[i][j] = 0
+        return cutMatrix
+
+    def analyzeMultiMachineDistributionCut(self, cutMatrix, machineDistribution, scale):
+        cut = 0
+        for i in range(cutMatrix.shape[0]):
+            for j in range(cutMatrix.shape[1]):
+                if machineDistribution[i] == machineDistribution[j]:
+                    cut += cutMatrix[i][j]
+                else:
+                    cut += cutMatrix[i][j] * scale
+        return cut
 
     def generateRoundRobinDistributionArray(self, nodeNum, partitionNum):
         distributionArray = np.zeros(nodeNum, dtype=int)
@@ -305,16 +369,16 @@ if __name__ == "__main__":
     parser.add_argument("metisUndirectedGraphFile", help="metis undirected graph file")
     # parser.add_argument("directedFile", help="metis directed graph file")
     parser.add_argument("partitionNum", type=int, help="partition npartition")
+    parser.add_argument("--machineNum", "--machineNum", type=int, default=1, help="Number of machines the partitions would distribute to equally")
+    parser.add_argument("--machineScale", "--machineScale", type=int, default=10, help="Scale of a cross-machine cut penalty")
     parser.add_argument("--hyperMetisGraphFile", "--hyperMetisGraphFile", dest="hyperMetisGraphFiles", action="append", help="hypermetis graph file(s)")
     parser.add_argument("--metisDistFile", "--metisDistFile", dest='metisDistFiles', action='append', help="metis partition distribution file(s)")
     
     # parser.add_argument("exeFile", help="Metis partition binary executable file")
-    # parser.add_argument("--gapJunctionScale", "--gapJunctionScale", type=int, default=1000, help="Scale of a gapJunction relative to a synapse")
-    # parser.add_argument("--nmachine", "--nmachine", type=int, default=1, help="Number of machines the partitions would distribute to equally")
     # parser.add_argument('--multicut', dest='enableMulticut', action='store_true', default=False, help='Enable the multicut algorithm')
     args = parser.parse_args()
 
-    metisGraphHelper = MetisGraphHelper(args.metisUndirectedGraphFile, args.partitionNum, args.hyperMetisGraphFiles, args.metisDistFiles)
+    metisGraphHelper = MetisGraphHelper(args.metisUndirectedGraphFile, args.partitionNum, args.machineNum, args.machineScale, args.hyperMetisGraphFiles, args.metisDistFiles)
     metisGraphHelper.analyze()
     # metisGraphHelper.analyzeRoundRobinCut(args.partitionNum)
     # metisGraphHelper.analyzeContinuousSegmentCut(args.partitionNum)
